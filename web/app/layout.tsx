@@ -1,5 +1,6 @@
 import { Public_Sans } from 'next/font/google';
 import localFont from 'next/font/local';
+import { Analytics } from '@vercel/analytics/next';
 import { ThemeProvider } from '@/components/app/theme-provider';
 import { ThemeToggle } from '@/components/app/theme-toggle';
 import { cn } from '@/lib/shadcn/utils';
@@ -100,6 +101,7 @@ export default function RootLayout({ children }: RootLayoutProps) {
             <ThemeToggle className="translate-y-20 transition-transform delay-150 duration-300 group-hover:translate-y-0" />
           </div>
         </ThemeProvider>
+        <Analytics />
       </body>
     </html>
   );

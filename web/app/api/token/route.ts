@@ -28,7 +28,25 @@ const ALLOW_PUBLIC_TOKENS = process.env.ALLOW_PUBLIC_TOKENS === 'true';
 
 export const revalidate = 0;
 
-export async function POST() {
+// Approximate caller location, from headers Vercel adds to every request (derived from the
+// IP address, which itself is never stored). Empty when running locally.
+function callerLocation(req: Request) {
+  const h = req.headers;
+  const dec = (v: string | null) => {
+    try {
+      return v ? decodeURIComponent(v) : '';
+    } catch {
+      return v ?? '';
+    }
+  };
+  return {
+    country: h.get('x-vercel-ip-country') ?? '',
+    region: dec(h.get('x-vercel-ip-country-region')),
+    city: dec(h.get('x-vercel-ip-city')),
+  };
+}
+
+export async function POST(req: Request) {
   if (process.env.NODE_ENV !== 'development' && !ALLOW_PUBLIC_TOKENS) {
     return new NextResponse(
       'Token endpoint disabled. Set ALLOW_PUBLIC_TOKENS=true to serve a public demo.',
@@ -47,20 +65,33 @@ export async function POST() {
       agents: [new RoomAgentDispatch({ agentName: AGENT_NAME })],
     });
 
+    const loc = callerLocation(req);
+    const place = [loc.city, loc.region, loc.country].filter(Boolean).join(', ') || 'unknown';
+    // Location is stored on the room (metadata), on the participant (name and attributes),
+    // and as a country code in the room name so the LiveKit Sessions list shows it at a glance.
+    roomConfig.metadata = JSON.stringify({ location: loc, started_at: new Date().toISOString() });
+
     const suffix = crypto.randomUUID().slice(0, 8);
     const participantIdentity = `operator_${suffix}`;
-    const roomName = `qa_line_${suffix}`;
+    const roomName = `qa_line_${loc.country || 'XX'}_${suffix}`;
 
     const participantToken = await createParticipantToken(
-      { identity: participantIdentity, name: 'Operator' },
+      {
+        identity: participantIdentity,
+        name: `Operator (${place})`,
+        attributes: { country: loc.country, region: loc.region, city: loc.city },
+      },
       roomName,
       roomConfig
     );
 
+    // One line per Start call in Vercel's runtime logs (kept 1 hour on Hobby).
+    console.log(JSON.stringify({ event: 'start_call', room: roomName, ...loc }));
+
     const data: ConnectionDetails = {
       serverUrl: LIVEKIT_URL,
       roomName,
-      participantName: 'Operator',
+      participantName: `Operator (${place})`,
       participantToken,
     };
     return NextResponse.json(data, { headers: { 'Cache-Control': 'no-store' } });

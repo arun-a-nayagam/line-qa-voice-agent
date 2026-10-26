@@ -309,6 +309,22 @@ async def entrypoint(ctx: JobContext) -> None:
     await session.start(agent=LineQAAgent(), room=ctx.room)
     await ctx.connect()
     limiter = asyncio.create_task(enforce_limit())
+
+    # Approximate caller location, set by the web token endpoint (country/region/city only).
+    async def log_caller() -> None:
+        try:
+            p = await asyncio.wait_for(ctx.wait_for_participant(), timeout=30)
+            a = p.attributes or {}
+            logger.info(
+                "call started from %s",
+                ", ".join(v for v in (a.get("city"), a.get("region"), a.get("country")) if v)
+                or "unknown location",
+                extra={"caller_identity": p.identity, "caller_location": dict(a)},
+            )
+        except asyncio.TimeoutError:
+            logger.info("no caller joined within 30s")
+
+    asyncio.create_task(log_caller())
     ctx.add_shutdown_callback(lambda: _cancel(limiter))
 
 
